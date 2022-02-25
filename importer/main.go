@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 )
 
 func main() {
+	// Force Setup time.Local to IST so we can deploy it to anywhere and not worry about it
 	loc, err := time.LoadLocation("Asia/Kolkata")
 	if err != nil {
 		panic(err.Error())
@@ -24,6 +26,11 @@ func main() {
 	// db, err := gorm.Open(sqlite.Open("optionskaro-backtest.db"), &gorm.Config{})
 
 	input := "/Users/ashwanth.kumar/Downloads/raw-options-data/monthly/24022022.csv"
+	isMonthlyExpiry := strings.Contains(input, "/monthly/")
+	isWeeklyExpiry := strings.Contains(input, "/weekly/")
+	expiryDate, err := parseDateFromFileName(fileNameWithoutExt(input))
+	handleError(err)
+
 	f, err := os.Open(input)
 	if err != nil {
 		log.Fatal(err)
@@ -33,7 +40,6 @@ func main() {
 		ticker := r["Ticker"]
 		dateTime, err := parseTime(r["Date/Time"])
 		handleError(err)
-		fmt.Printf("%v\n", dateTime)
 
 		oi, err := strconv.ParseFloat(r["Open Interest"], 64)
 		handleError(err)
@@ -41,14 +47,30 @@ func main() {
 		volume, err := strconv.ParseFloat(r["Volume"], 64)
 		handleError(err)
 
-		if isSpot(ticker, oi, volume) {
-			fmt.Printf("%v\n", r)
-		}
+		is_spot := isSpot(ticker, oi, volume)
+
 	}
+}
+
+func fileNameWithoutExt(input string) string {
+	filename := filepath.Base(input)
+	fileExtIfAny := filepath.Ext(input)
+	return strings.ReplaceAll(filename, fileExtIfAny, "")
 }
 
 func parseTime(input string) (time.Time, error) {
 	return dateparse.ParseIn(strings.ReplaceAll(input, "-", "/"), time.Local, dateparse.PreferMonthFirst(false))
+}
+
+func parseDateFromFileName(fileNameWithoutExt string) (time.Time, error) {
+	// 28082020 -- first 2 is date, next 2 is month and next 4 is year
+	date, err := strconv.ParseInt(fileNameWithoutExt[0:2], 10, 16)
+	handleError(err)
+	month, err := strconv.ParseInt(fileNameWithoutExt[2:4], 10, 16)
+	handleError(err)
+	year, err := strconv.ParseInt(fileNameWithoutExt[4:], 10, 16)
+	handleError(err)
+	return dateparse.ParseLocal(fmt.Sprintf("%d-%d-%d", year, month, date))
 }
 
 func handleError(err error) {
