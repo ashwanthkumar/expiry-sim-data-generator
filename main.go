@@ -81,7 +81,7 @@ func main() {
 					continue
 				}
 				if !strings.EqualFold(lastTicker, ticker) {
-					fmt.Printf("Processing %s ticker\n", ticker)
+					fmt.Printf("Processing %s ticker for expiry at %s\n", ticker, expiryDate.String())
 					if len(recordsToInsert) > 0 {
 						// batch insert the recordsToInsert
 						result := db.CreateInBatches(recordsToInsert, bulkInsertBatchSize)
@@ -188,7 +188,7 @@ func main() {
 
 				recordsToInsert = append(recordsToInsert, tickData)
 
-				if len(recordsToInsert) == bulkInsertBatchSize {
+				if len(recordsToInsert) >= bulkInsertBatchSize {
 					result := db.Create(recordsToInsert)
 					if result.Error != nil {
 						handleError(result.Error)
