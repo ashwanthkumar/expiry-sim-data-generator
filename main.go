@@ -81,14 +81,18 @@ func main() {
 				if strings.HasPrefix(ticker, "USDINR") {
 					continue
 				}
-				if !strings.EqualFold(lastTicker, ticker) && len(recordsToInsert) > 0 {
-					// batch insert the recordsToInsert
-					result := db.CreateInBatches(recordsToInsert, bulkInsertBatchSize)
-					if result.Error != nil {
-						handleError(result.Error)
-					}
+				if !strings.EqualFold(lastTicker, ticker) {
+					fmt.Printf("Processing %s ticker\n", ticker)
+					if len(recordsToInsert) > 0 {
+						// batch insert the recordsToInsert
+						result := db.CreateInBatches(recordsToInsert, bulkInsertBatchSize)
+						if result.Error != nil {
+							handleError(result.Error)
+						}
 
-					recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
+						log.Printf("Inserted %d records\n", bulkInsertBatchSize)
+						recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
+					}
 				}
 				lastTicker = ticker
 
@@ -190,6 +194,7 @@ func main() {
 					if result.Error != nil {
 						handleError(result.Error)
 					}
+					log.Printf("Inserted %d records\n", bulkInsertBatchSize)
 
 					recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
 				}
@@ -200,7 +205,7 @@ func main() {
 				if result.Error != nil {
 					handleError(result.Error)
 				}
-
+				log.Printf("Inserted %d records\n", bulkInsertBatchSize)
 				recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
 			}
 
