@@ -75,6 +75,7 @@ func main() {
 			}
 			records := CSVToMap(f)
 			for _, r := range records {
+			SKIP_RECORD:
 				// fmt.Printf("%v\n", r)
 				ticker := r["Ticker"]
 				if strings.HasPrefix(ticker, "USDINR") {
@@ -129,6 +130,10 @@ func main() {
 
 					// NOTE: DO NOT MOVE THIS ABOVE THE IF BLOCKS
 					instrument.Underlying = findUnderlyingFromSymbol(instrument.Symbol)
+					// insert only NIFTY related records in our database for now
+					if instrument.Underlying != "NIFTY" {
+						goto SKIP_RECORD
+					}
 					// Update the SYMBOL to the format like 22NIFTY30316000CE
 					strikeStr := ""
 					if instrument.Strike.Valid {
@@ -220,7 +225,7 @@ var futureRegex = regexp.MustCompile(`^([A-Z]+)-FUT$`)
 
 func symbolFromFut(input string) string {
 	matches := futureRegex.FindStringSubmatch(input)
-	fmt.Printf("%v\n", matches)
+	// fmt.Printf("%v\n", matches)
 	return matches[1]
 }
 
