@@ -19,7 +19,6 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	// Pure go SQLite driver, checkout https://github.com/glebarez/sqlite for details
 )
 
 func main() {
