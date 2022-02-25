@@ -3,6 +3,9 @@ package main
 import (
 	"database/sql"
 	"database/sql/driver"
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -19,12 +22,25 @@ const (
 )
 
 func (ct *InstrumentType) Scan(value interface{}) error {
-	*ct = InstrumentType(value.([]byte))
+	*ct = InstrumentType(value.(string))
 	return nil
 }
 
 func (ct InstrumentType) Value() (driver.Value, error) {
 	return string(ct), nil
+}
+
+func NewInstrumentType(asString string) (InstrumentType, error) {
+	switch {
+	case strings.EqualFold("PE", asString):
+		return PE, nil
+	case strings.EqualFold("CE", asString):
+		return CE, nil
+	case strings.EqualFold("FUT", asString):
+		return FUT, nil
+	default:
+		return "", errors.New(fmt.Sprintf("%s is invalid Instrument type", asString))
+	}
 }
 
 // InstrumentType but can also be null when refering to spot instruments
@@ -37,7 +53,7 @@ func (n *NullableInstrumentType) Scan(value interface{}) error {
 	if value == nil {
 		n.InstrumentType, n.Valid = "", false
 	} else {
-		n.InstrumentType, n.Valid = InstrumentType(value.([]byte)), true
+		n.InstrumentType, n.Valid = InstrumentType(value.(string)), true
 	}
 	return nil
 }
@@ -70,7 +86,8 @@ type TickData struct {
 	gorm.Model
 
 	// FK
-	Instrument Instrument `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+	InstrumentId uint       `gorm:"index"`
+	Instrument   Instrument `gorm:"constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 
 	Timestamp time.Time `gorm:"index"`
 	OI        uint32    // this is set to 0 for spot instruments

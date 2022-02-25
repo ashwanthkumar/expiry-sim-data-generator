@@ -14,6 +14,9 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	// Pure go SQLite driver, checkout https://github.com/glebarez/sqlite for details
 )
 
@@ -25,47 +28,156 @@ func main() {
 	}
 	time.Local = loc
 
-	// db, err := gorm.Open(sqlite.Open("optionskaro-backtest.db"), &gorm.Config{})
+	dbLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
+		logger.Config{
+			SlowThreshold:             250 * time.Millisecond, // Slow SQL threshold
+			LogLevel:                  logger.Info,            // Log level
+			IgnoreRecordNotFoundError: false,                  // Ignore ErrRecordNotFound error for logger
+			Colorful:                  true,                   // Disable color
+		},
+	)
+
+	log.Println("Opening database for importing")
+	db, err := gorm.Open(sqlite.Open("optionskaro-backtest.db"), &gorm.Config{
+		SkipDefaultTransaction: true,
+		Logger:                 dbLogger,
+	})
+	log.Println("Running Migrations for our models")
+	db.AutoMigrate(&Instrument{}, &TickData{})
 
 	input := "/Users/ashwanth.kumar/Downloads/raw-options-data/monthly/24022022.csv"
-	// isMonthlyExpiry := strings.Contains(input, "/monthly/")
-	// isWeeklyExpiry := strings.Contains(input, "/weekly/")
-	// expiryDate, err := parseDateFromFileName(fileNameWithoutExt(input))
+	log.Printf("Starting to read the input file: %s\n", input)
+
+	isMonthlyExpiry := strings.Contains(input, "/monthly/")
+	isWeeklyExpiry := strings.Contains(input, "/weekly/")
+	expiryDate, err := parseDateFromFileName(fileNameWithoutExt(input))
 	handleError(err)
+
+	tickerToInstrumentCache := make(map[string]Instrument)
 
 	f, err := os.Open(input)
 	if err != nil {
 		log.Fatal(err)
 	}
 	records := CSVToMap(f)
+	lastTicker := ""
+	var recordsToInsert []TickData
+	const bulkInsertBatchSize = 1000
 	for _, r := range records {
 		ticker := r["Ticker"]
+		if strings.HasPrefix(ticker, "USDINR") {
+			continue
+		}
+		if !strings.EqualFold(lastTicker, ticker) && len(recordsToInsert) > 0 {
+			// batch insert the recordsToInsert
+			result := db.CreateInBatches(recordsToInsert, bulkInsertBatchSize)
+			if result.Error != nil {
+				handleError(result.Error)
+			}
+
+			recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
+		}
+		lastTicker = ticker
+
+		oi, err := strconv.ParseFloat(r["Open Interest"], 64)
+		handleError(err)
+		volume, err := strconv.ParseFloat(r["Volume"], 64)
+		handleError(err)
+
 		instrument := Instrument{}
 
-		if isOption(ticker) {
-			parts, err := optionStrikeFromTicker(ticker)
-			handleError(err)
-			fmt.Printf("%v\n", parts)
-			fmt.Printf("%v\n", r)
-			instrument.Symbol = parts[0]
-			instrument.Strike = parts[1]
-			instrument.InstrumentType = parts[2]
+		if existingInstrument, ok := tickerToInstrumentCache[ticker]; ok {
+			instrument = existingInstrument
+		} else {
+			instrument.Expiry = NullableTime(expiryDate)
+			instrument.IsWeeklyExpiry = isWeeklyExpiry
+			instrument.IsMonthlyExpiry = isMonthlyExpiry
+			instrument.Symbol = ticker
+
+			if isOption(ticker) {
+				parts, err := optionStrikeFromTicker(ticker)
+				handleError(err)
+				instrument.Symbol = parts[0]
+
+				strike, err := NullableInt32FromString(parts[1], 10)
+				handleError(err)
+				instrument.Strike = strike
+
+				instrumentType, err := NewInstrumentType(parts[2])
+				handleError(err)
+				instrument.InstrumentType = instrumentType
+				instrument.LotSize = NullableInt32(50)
+			}
+
+			if isFuture(ticker) {
+				instrument.Symbol = symbolFromFut(ticker)
+				instrument.InstrumentType = "FUT"
+				instrument.LotSize = NullableInt32(50)
+			}
+
+			// NOTE: DONOT MOVE THIS ABOVE THE IF BLOCKS
+			instrument.Underlying = findUnderlyingFromSymbol(instrument.Symbol)
+
+			instrument.IsSpot = isSpot(ticker, oi, volume)
+
+			result := db.Where(&instrument).FirstOrCreate(&instrument)
+			if result.Error != nil {
+				handleError(result.Error)
+			}
+			tickerToInstrumentCache[ticker] = instrument
 		}
-		if isFuture(ticker) {
-			instrument.Symbol = symbolFromFut(ticker)
-			instrument.InstrumentType = "FUT"
-			fmt.Printf("%v\n", ticker)
+
+		// building the tick data
+		dateTime, err := parseTime(r["Date/Time"])
+		handleError(err)
+		open, err := strconv.ParseFloat(r["Open"], 64)
+		handleError(err)
+		high, err := strconv.ParseFloat(r["High"], 64)
+		handleError(err)
+		low, err := strconv.ParseFloat(r["Low"], 64)
+		handleError(err)
+		close, err := strconv.ParseFloat(r["Close"], 64)
+		handleError(err)
+
+		// queryTickData := TickData{
+		// 	InstrumentId: instrument.ID,
+		// 	Timestamp:    dateTime,
+		// }
+
+		tickData := TickData{
+			InstrumentId: instrument.ID,
+			Timestamp:    dateTime,
+			OI:           uint32(oi),
+			Volume:       uint32(volume),
+			Open:         open,
+			High:         high,
+			Low:          low,
+			Close:        close,
 		}
-		// dateTime, err := parseTime(r["Date/Time"])
-		// handleError(err)
 
-		// oi, err := strconv.ParseFloat(r["Open Interest"], 64)
-		// handleError(err)
+		recordsToInsert = append(recordsToInsert, tickData)
 
-		// volume, err := strconv.ParseFloat(r["Volume"], 64)
-		// handleError(err)
+		if len(recordsToInsert) == bulkInsertBatchSize {
+			result := db.Create(recordsToInsert)
+			if result.Error != nil {
+				handleError(result.Error)
+			}
 
-		// is_spot := isSpot(ticker, oi, volume)
+			recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
+		}
+	}
+	log.Println("Saved all the records into DB")
+}
+
+func findUnderlyingFromSymbol(symbol string) string {
+	switch {
+	case strings.EqualFold(symbol, "BANKNIFTY"):
+		return "BANKNIFTY"
+	case strings.EqualFold(symbol, "NIFTY"):
+		return "NIFTY"
+	default:
+		return symbol
 	}
 }
 
@@ -84,6 +196,10 @@ func optionStrikeFromTicker(input string) ([]string, error) {
 		return []string{}, errors.New(fmt.Sprintf("%s doesn't seem like a valid option symbol", input))
 	}
 	matches := optionsRegex.FindStringSubmatch(input)
+	if len(matches) < 1 {
+		fmt.Println("Input failed for: " + input)
+		return []string{}, errors.New(fmt.Sprintf("%s doesn't seem like a valid option symbol", input))
+	}
 	// fmt.Printf("%v\n", matches)
 	// [0] -> original string
 	// [1] -> symbol
@@ -120,7 +236,7 @@ func handleError(err error) {
 }
 
 func isOption(ticker string) bool {
-	return strings.HasSuffix(ticker, "CE") || strings.HasSuffix(ticker, "PE")
+	return optionsRegex.MatchString(ticker)
 }
 
 func isFuture(ticker string) bool {
