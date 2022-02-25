@@ -74,7 +74,7 @@ func main() {
 				log.Fatal(err)
 			}
 			records := CSVToMap(f)
-			for _, r := range records[:5] {
+			for _, r := range records {
 				// fmt.Printf("%v\n", r)
 				ticker := r["Ticker"]
 				if strings.HasPrefix(ticker, "USDINR") {
