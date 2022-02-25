@@ -34,7 +34,7 @@ func main() {
 		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
 		logger.Config{
 			SlowThreshold:             250 * time.Millisecond, // Slow SQL threshold
-			LogLevel:                  logger.Error,           // Log level
+			LogLevel:                  logger.Silent,          // Log level
 			IgnoreRecordNotFoundError: false,                  // Ignore ErrRecordNotFound error for logger
 			Colorful:                  true,                   // Disable color
 		},
@@ -75,7 +75,6 @@ func main() {
 			}
 			records := CSVToMap(f)
 			for _, r := range records {
-			SKIP_RECORD:
 				// fmt.Printf("%v\n", r)
 				ticker := r["Ticker"]
 				if strings.HasPrefix(ticker, "USDINR") {
@@ -136,7 +135,7 @@ func main() {
 					instrument.Underlying = findUnderlyingFromSymbol(instrument.Symbol)
 					// insert only NIFTY related records in our database for now
 					if instrument.Underlying != "NIFTY" {
-						goto SKIP_RECORD
+						continue
 					}
 					// Update the SYMBOL to the format like 22NIFTY30316000CE
 					strikeStr := ""
@@ -208,7 +207,6 @@ func main() {
 				log.Printf("Inserted %d records\n", bulkInsertBatchSize)
 				recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
 			}
-
 		}
 	}
 
