@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -32,7 +34,7 @@ func main() {
 		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
 		logger.Config{
 			SlowThreshold:             250 * time.Millisecond, // Slow SQL threshold
-			LogLevel:                  logger.Info,            // Log level
+			LogLevel:                  logger.Error,           // Log level
 			IgnoreRecordNotFoundError: false,                  // Ignore ErrRecordNotFound error for logger
 			Colorful:                  true,                   // Disable color
 		},
@@ -46,127 +48,160 @@ func main() {
 	log.Println("Running Migrations for our models")
 	db.AutoMigrate(&Instrument{}, &TickData{})
 
-	input := "/Users/ashwanth.kumar/Downloads/raw-options-data/monthly/24022022.csv"
-	log.Printf("Starting to read the input file: %s\n", input)
+	baseLocations := []string{"/Users/ashwanth.kumar/Downloads/raw-options-data/weekly", "/Users/ashwanth.kumar/Downloads/raw-options-data/monthly"}
+	for _, baseLocation := range baseLocations {
+		log.Printf("Processing path at %s\n", baseLocation)
+		files, err := ioutil.ReadDir(baseLocation)
+		handleError(err)
 
-	isMonthlyExpiry := strings.Contains(input, "/monthly/")
-	isWeeklyExpiry := strings.Contains(input, "/weekly/")
-	expiryDate, err := parseDateFromFileName(fileNameWithoutExt(input))
-	handleError(err)
+		for _, f := range files {
+			input := path.Join(baseLocation, f.Name())
+			log.Printf("Starting to read the input file: %s\n", input)
 
-	tickerToInstrumentCache := make(map[string]Instrument)
+			isMonthlyExpiry := strings.Contains(input, "/monthly/")
+			isWeeklyExpiry := strings.Contains(input, "/weekly/")
+			expiryDate, err := parseDateFromFileName(fileNameWithoutExt(input))
+			handleError(err)
 
-	f, err := os.Open(input)
-	if err != nil {
-		log.Fatal(err)
+			tickerToInstrumentCache := make(map[string]Instrument)
+
+			lastTicker := ""
+			var recordsToInsert []TickData
+			const bulkInsertBatchSize = 500
+
+			f, err := os.Open(input)
+			if err != nil {
+				log.Fatal(err)
+			}
+			records := CSVToMap(f)
+			for _, r := range records[:5] {
+				// fmt.Printf("%v\n", r)
+				ticker := r["Ticker"]
+				if strings.HasPrefix(ticker, "USDINR") {
+					continue
+				}
+				if !strings.EqualFold(lastTicker, ticker) && len(recordsToInsert) > 0 {
+					// batch insert the recordsToInsert
+					result := db.CreateInBatches(recordsToInsert, bulkInsertBatchSize)
+					if result.Error != nil {
+						handleError(result.Error)
+					}
+
+					recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
+				}
+				lastTicker = ticker
+
+				oi, err := strconv.ParseFloat(r["Open Interest"], 64)
+				handleError(err)
+				volume, err := strconv.ParseFloat(r["Volume"], 64)
+				handleError(err)
+
+				instrument := Instrument{}
+
+				if existingInstrument, ok := tickerToInstrumentCache[ticker]; ok {
+					instrument = existingInstrument
+				} else {
+					instrument.Expiry = NullableTime(expiryDate)
+					instrument.IsWeeklyExpiry = isWeeklyExpiry
+					instrument.IsMonthlyExpiry = isMonthlyExpiry
+					instrument.Symbol = ticker
+
+					if isOption(ticker) {
+						parts, err := optionStrikeFromTicker(ticker)
+						handleError(err)
+						instrument.Symbol = parts[0]
+
+						strike, err := NullableInt32FromString(parts[1], 10)
+						handleError(err)
+						instrument.Strike = strike
+
+						instrumentType, err := NewInstrumentType(parts[2])
+						handleError(err)
+						instrument.InstrumentType = instrumentType
+						instrument.LotSize = NullableInt32(50)
+					}
+
+					if isFuture(ticker) {
+						instrument.Symbol = symbolFromFut(ticker)
+						instrument.InstrumentType = "FUT"
+						instrument.LotSize = NullableInt32(50)
+					}
+
+					// NOTE: DO NOT MOVE THIS ABOVE THE IF BLOCKS
+					instrument.Underlying = findUnderlyingFromSymbol(instrument.Symbol)
+					// Update the SYMBOL to the format like 22NIFTY30316000CE
+					strikeStr := ""
+					if instrument.Strike.Valid {
+						strikeStr = string(instrument.Strike.Int32)
+					}
+					first2YearChars := fmt.Sprint(expiryDate.Year())[2:2]
+					instrument.Symbol = fmt.Sprintf("%s%s%s%s", first2YearChars, instrument.Underlying, strikeStr, instrument.InstrumentType)
+
+					instrument.IsSpot = isSpot(ticker, oi, volume)
+					if instrument.IsSpot {
+						instrument.IsMonthlyExpiry = false
+						instrument.IsWeeklyExpiry = false
+					}
+
+					result := db.Where(&instrument).FirstOrCreate(&instrument)
+					if result.Error != nil {
+						handleError(result.Error)
+					}
+					tickerToInstrumentCache[ticker] = instrument
+				}
+
+				// building the tick data
+				dateTime, err := parseTime(r["Date/Time"])
+				handleError(err)
+				open, err := strconv.ParseFloat(r["Open"], 64)
+				handleError(err)
+				high, err := strconv.ParseFloat(r["High"], 64)
+				handleError(err)
+				low, err := strconv.ParseFloat(r["Low"], 64)
+				handleError(err)
+				close, err := strconv.ParseFloat(r["Close"], 64)
+				handleError(err)
+
+				// queryTickData := TickData{
+				// 	InstrumentId: instrument.ID,
+				// 	Timestamp:    dateTime,
+				// }
+
+				tickData := TickData{
+					InstrumentId: instrument.ID,
+					Timestamp:    dateTime,
+					OI:           uint32(oi),
+					Volume:       uint32(volume),
+					Open:         open,
+					High:         high,
+					Low:          low,
+					Close:        close,
+				}
+
+				recordsToInsert = append(recordsToInsert, tickData)
+
+				if len(recordsToInsert) == bulkInsertBatchSize {
+					result := db.Create(recordsToInsert)
+					if result.Error != nil {
+						handleError(result.Error)
+					}
+
+					recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
+				}
+			}
+
+			if len(recordsToInsert) > 0 {
+				result := db.Create(recordsToInsert)
+				if result.Error != nil {
+					handleError(result.Error)
+				}
+
+				recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
+			}
+
+		}
 	}
-	records := CSVToMap(f)
-	lastTicker := ""
-	var recordsToInsert []TickData
-	const bulkInsertBatchSize = 1000
-	for _, r := range records {
-		ticker := r["Ticker"]
-		if strings.HasPrefix(ticker, "USDINR") {
-			continue
-		}
-		if !strings.EqualFold(lastTicker, ticker) && len(recordsToInsert) > 0 {
-			// batch insert the recordsToInsert
-			result := db.CreateInBatches(recordsToInsert, bulkInsertBatchSize)
-			if result.Error != nil {
-				handleError(result.Error)
-			}
 
-			recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
-		}
-		lastTicker = ticker
-
-		oi, err := strconv.ParseFloat(r["Open Interest"], 64)
-		handleError(err)
-		volume, err := strconv.ParseFloat(r["Volume"], 64)
-		handleError(err)
-
-		instrument := Instrument{}
-
-		if existingInstrument, ok := tickerToInstrumentCache[ticker]; ok {
-			instrument = existingInstrument
-		} else {
-			instrument.Expiry = NullableTime(expiryDate)
-			instrument.IsWeeklyExpiry = isWeeklyExpiry
-			instrument.IsMonthlyExpiry = isMonthlyExpiry
-			instrument.Symbol = ticker
-
-			if isOption(ticker) {
-				parts, err := optionStrikeFromTicker(ticker)
-				handleError(err)
-				instrument.Symbol = parts[0]
-
-				strike, err := NullableInt32FromString(parts[1], 10)
-				handleError(err)
-				instrument.Strike = strike
-
-				instrumentType, err := NewInstrumentType(parts[2])
-				handleError(err)
-				instrument.InstrumentType = instrumentType
-				instrument.LotSize = NullableInt32(50)
-			}
-
-			if isFuture(ticker) {
-				instrument.Symbol = symbolFromFut(ticker)
-				instrument.InstrumentType = "FUT"
-				instrument.LotSize = NullableInt32(50)
-			}
-
-			// NOTE: DONOT MOVE THIS ABOVE THE IF BLOCKS
-			instrument.Underlying = findUnderlyingFromSymbol(instrument.Symbol)
-
-			instrument.IsSpot = isSpot(ticker, oi, volume)
-
-			result := db.Where(&instrument).FirstOrCreate(&instrument)
-			if result.Error != nil {
-				handleError(result.Error)
-			}
-			tickerToInstrumentCache[ticker] = instrument
-		}
-
-		// building the tick data
-		dateTime, err := parseTime(r["Date/Time"])
-		handleError(err)
-		open, err := strconv.ParseFloat(r["Open"], 64)
-		handleError(err)
-		high, err := strconv.ParseFloat(r["High"], 64)
-		handleError(err)
-		low, err := strconv.ParseFloat(r["Low"], 64)
-		handleError(err)
-		close, err := strconv.ParseFloat(r["Close"], 64)
-		handleError(err)
-
-		// queryTickData := TickData{
-		// 	InstrumentId: instrument.ID,
-		// 	Timestamp:    dateTime,
-		// }
-
-		tickData := TickData{
-			InstrumentId: instrument.ID,
-			Timestamp:    dateTime,
-			OI:           uint32(oi),
-			Volume:       uint32(volume),
-			Open:         open,
-			High:         high,
-			Low:          low,
-			Close:        close,
-		}
-
-		recordsToInsert = append(recordsToInsert, tickData)
-
-		if len(recordsToInsert) == bulkInsertBatchSize {
-			result := db.Create(recordsToInsert)
-			if result.Error != nil {
-				handleError(result.Error)
-			}
-
-			recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
-		}
-	}
 	log.Println("Saved all the records into DB")
 }
 
