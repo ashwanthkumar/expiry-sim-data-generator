@@ -89,7 +89,7 @@ func main() {
 							handleError(result.Error)
 						}
 
-						log.Printf("Inserted %d records\n", bulkInsertBatchSize)
+						log.Printf("Inserted %d records\n", len(recordsToInsert))
 						recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
 					}
 				}
@@ -193,7 +193,7 @@ func main() {
 					if result.Error != nil {
 						handleError(result.Error)
 					}
-					log.Printf("Inserted %d records\n", bulkInsertBatchSize)
+					log.Printf("Inserted %d records\n", len(recordsToInsert))
 
 					recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
 				}
@@ -204,7 +204,7 @@ func main() {
 				if result.Error != nil {
 					handleError(result.Error)
 				}
-				log.Printf("Inserted %d records\n", bulkInsertBatchSize)
+				log.Printf("Inserted %d records\n", len(recordsToInsert))
 				recordsToInsert = make([]TickData, bulkInsertBatchSize+1)
 			}
 		}
