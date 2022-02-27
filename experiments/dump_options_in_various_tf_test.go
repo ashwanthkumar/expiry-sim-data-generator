@@ -8,3 +8,15 @@ func TestSliceContains(t *testing.T) {
 	expected := true
 	assert.Equal(t, expected, SliceContains(input, 5))
 }
+
+func TestIsOption(t *testing.T) {
+	input := "NIFTYWK15500PE"
+	assert.True(t, isNiftyOptionsTicker(input))
+}
+
+func TestIsNotOption(t *testing.T) {
+	assert.False(t, isNiftyOptionsTicker("NIFTY"))
+	assert.False(t, isNiftyOptionsTicker("NIFTY-FUT"))
+	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT"))
+	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT"))
+}
