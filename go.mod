@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de // indirect
+	github.com/ashwanthkumar/golang-utils v0.0.0-20220227005047-471d277da4ab
 	github.com/glebarez/go-sqlite v1.14.7 // indirect
 	github.com/glebarez/sqlite v1.3.5 // indirect
 	github.com/google/uuid v1.3.0 // indirect
