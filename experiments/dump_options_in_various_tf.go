@@ -73,48 +73,51 @@ func (t TickData) ToSlice(timerTick int64) []float64 {
 }
 
 func main() {
-	baseLocation := "/Users/ashwanth.kumar/Downloads/raw-options-data/weekly/"
-	files, err := ioutil.ReadDir(baseLocation)
-	handleError(err)
+	baseLocations := []string{"monthly/", "weekly/"}
+	for _, baseLocation := range baseLocations {
 
-	for _, f := range files {
-		input := path.Join(baseLocation, f.Name())
-		f, err := os.Open(input)
+		files, err := ioutil.ReadDir(baseLocation)
 		handleError(err)
-		defer f.Close()
-		log.Printf("Processing file: %s", input)
-		records := CSVToMap(f)
 
-		// this is a nested map which has the following structure
-		// outer map's key is of type "time.Time" that denotes
-		// the time of the tick.
-		// The inner map's key denotes the ticker name (NIFTY, INDIAVIX, etc.)
-		// we would ideally want to query all the columns for a given time tick,
-		// hence this format of choice.
-		columnarData := make(map[int64]map[string]TickData)
+		for _, f := range files {
+			input := path.Join(baseLocation, f.Name())
+			f, err := os.Open(input)
+			handleError(err)
+			defer f.Close()
+			log.Printf("Processing file: %s", input)
+			records := CSVToMap(f)
 
-		columnNames := readData(records, columnarData)
-		// log.Printf("built in-memory collection of nifty records from: %v\n", columnNames)
+			// this is a nested map which has the following structure
+			// outer map's key is of type "time.Time" that denotes
+			// the time of the tick.
+			// The inner map's key denotes the ticker name (NIFTY, INDIAVIX, etc.)
+			// we would ideally want to query all the columns for a given time tick,
+			// hence this format of choice.
+			columnarData := make(map[int64]map[string]TickData)
 
-		allTimeTicksForTheCurrentExpiry := buildTimeTicksFromColumns(columnarData)
-		// given each file contains all the data to expiry the last time in a sorted slice will be the expiry time that we need
-		expiryDate := truncateToDay(time.Unix(allTimeTicksForTheCurrentExpiry[len(allTimeTicksForTheCurrentExpiry)-1], 0))
+			columnNames := readData(records, columnarData)
+			// log.Printf("built in-memory collection of nifty records from: %v\n", columnNames)
 
-		for _, columnToPick := range columnNames {
-			// columnToPick := "NIFTY15700CE"
-			timeUnits := []time.Duration{1 * time.Minute, 3 * time.Minute, 5 * time.Minute}
-			for _, unitTime := range timeUnits {
-				// unitTime := 5 * time.Minute
-				underlying := underlyingFromTicker(columnToPick)
+			allTimeTicksForTheCurrentExpiry := buildTimeTicksFromColumns(columnarData)
+			// given each file contains all the data to expiry the last time in a sorted slice will be the expiry time that we need
+			expiryDate := truncateToDay(time.Unix(allTimeTicksForTheCurrentExpiry[len(allTimeTicksForTheCurrentExpiry)-1], 0))
 
-				ohlcDataByUnitTime, ohlcDataTicks := ohlcDataGroupedByFor(allTimeTicksForTheCurrentExpiry, columnarData, columnToPick, unitTime)
-				ticks := [][]float64{}
-				for _, tick := range ohlcDataTicks {
-					tickData := ohlcDataByUnitTime[tick]
-					ticks = append(ticks, tickData.ToSlice(tick))
+			for _, columnToPick := range columnNames {
+				// columnToPick := "NIFTY15700CE"
+				timeUnits := []time.Duration{1 * time.Minute, 3 * time.Minute, 5 * time.Minute}
+				for _, unitTime := range timeUnits {
+					// unitTime := 5 * time.Minute
+					underlying := underlyingFromTicker(columnToPick)
+
+					ohlcDataByUnitTime, ohlcDataTicks := ohlcDataGroupedByFor(allTimeTicksForTheCurrentExpiry, columnarData, columnToPick, unitTime)
+					ticks := [][]float64{}
+					for _, tick := range ohlcDataTicks {
+						tickData := ohlcDataByUnitTime[tick]
+						ticks = append(ticks, tickData.ToSlice(tick))
+					}
+
+					writeDataToFs(columnToPick, expiryDate, unitTime, ticks, underlying)
 				}
-
-				writeDataToFs(columnToPick, expiryDate, unitTime, ticks, underlying)
 			}
 		}
 	}
