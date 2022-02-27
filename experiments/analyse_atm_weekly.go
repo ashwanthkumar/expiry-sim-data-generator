@@ -10,6 +10,8 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -91,27 +93,23 @@ func main() {
 	// given each file contains all the data to expiry the last time in a sorted slice will be the expiry time that we need
 	expiryDate := truncateToDay(time.Unix(allTimeTicksForTheCurrentExpiry[len(allTimeTicksForTheCurrentExpiry)-1], 0))
 
-	unitTime := 5 * time.Minute
-	columnToPick := "NIFTY15700CE"
+	for _, columnToPick := range columnNames {
+		// columnToPick := "NIFTY15700CE"
+		timeUnits := []time.Duration{1 * time.Minute, 3 * time.Minute, 5 * time.Minute}
+		for _, unitTime := range timeUnits {
+			// unitTime := 5 * time.Minute
+			underlying := underlyingFromTicker(columnToPick)
 
-	ohlcDataByUnitTime, ohlcDataTicks := ohlcDataGroupedByFor(allTimeTicksForTheCurrentExpiry, columnarData, columnToPick, unitTime)
+			ohlcDataByUnitTime, ohlcDataTicks := ohlcDataGroupedByFor(allTimeTicksForTheCurrentExpiry, columnarData, columnToPick, unitTime)
+			ticks := [][]float64{}
+			for _, tick := range ohlcDataTicks {
+				tickData := ohlcDataByUnitTime[tick]
+				ticks = append(ticks, tickData.ToSlice(tick))
+			}
 
-	ticks := [][]float64{}
-	for _, tick := range ohlcDataTicks {
-		tickData := ohlcDataByUnitTime[tick]
-		ticks = append(ticks, tickData.ToSlice(tick))
+			writeDataToFs(columnToPick, expiryDate, unitTime, ticks, underlying)
+		}
 	}
-	output := make(map[string]interface{})
-	output["ticker"] = columnToPick
-	output["expiryDate"] = expiryDate.Format("2006-01-02")
-	output["tf_minutes"] = unitTime.Minutes()
-	output["data"] = ticks
-	file, err := json.Marshal(output)
-	handleError(err)
-
-	fileName := fmt.Sprintf("%d%s.json", expiryDate.Year(), columnToPick)
-	err = ioutil.WriteFile(fileName, file, 0644)
-	handleError(err)
 
 	// const minStrikeDistance float64 = 50
 	// for _, tick := range allTimeTicksForTheCurrentExpiry {
@@ -120,6 +118,72 @@ func main() {
 	// 	vix, atmStraddle := vixAndAtmStraddle(columns, minStrikeDistance)
 	// 	fmt.Printf("%s - %f - %f\n", tickTime, vix, atmStraddle)
 	// }
+}
+
+func writeDataToFs(columnToPick string, expiryDate time.Time, unitTime time.Duration, ticks [][]float64, underlying string) {
+	output := make(map[string]interface{})
+	output["ticker"] = columnToPick
+	expiryDateFormat := expiryDate.Format("2006-01-02")
+	output["expiryDate"] = expiryDateFormat
+	tfMinutes := unitTime.Minutes()
+	output["tf_minutes"] = tfMinutes
+	output["data"] = ticks
+	file, err := json.Marshal(output)
+	handleError(err)
+
+	fileName := fmt.Sprintf("%s/%s/%s/%dmin.json", underlying, expiryDateFormat, columnToPick, int(tfMinutes))
+	err = os.MkdirAll(filepath.Dir(fileName), os.ModePerm)
+	handleError(err)
+	err = ioutil.WriteFile(fileName, file, 0644)
+	handleError(err)
+	log.Printf("Wrote %s against %dmin timeframe\n", fileName, int(tfMinutes))
+}
+
+func underlyingFromTicker(ticker string) string {
+	if isFuture(ticker) {
+		return symbolFromFut(ticker)
+	} else if isOption(ticker) {
+		symbol, err := symbolFromOptions(ticker)
+		handleError(err)
+		return symbol
+	} else {
+		// if spot
+		return ticker
+	}
+}
+
+var futureRegex = regexp.MustCompile(`^([A-Z]+)-FUT$`)
+
+func symbolFromFut(input string) string {
+	matches := futureRegex.FindStringSubmatch(input)
+	// fmt.Printf("%v\n", matches)
+	return matches[1]
+}
+
+var optionsRegex = regexp.MustCompile(`^([A-Z]+)([0-9]+)(CE|PE)$`)
+
+func isOption(ticker string) bool {
+	return optionsRegex.MatchString(ticker)
+}
+func isFuture(ticker string) bool {
+	return futureRegex.MatchString(ticker)
+}
+
+func symbolFromOptions(input string) (string, error) {
+	if !isOption(input) {
+		return "", fmt.Errorf("%s doesn't seem like a valid option symbol", input)
+	}
+	matches := optionsRegex.FindStringSubmatch(input)
+	if len(matches) < 1 {
+		fmt.Println("Input failed for: " + input)
+		return "", fmt.Errorf("%s doesn't seem like a valid option symbol", input)
+	}
+	// fmt.Printf("%v\n", matches)
+	// [0] -> original string
+	// [1] -> symbol
+	// [2] -> strike
+	// [3] -> CE/PE - Instrument Type
+	return matches[1], nil
 }
 
 func truncateToDay(t time.Time) time.Time {
