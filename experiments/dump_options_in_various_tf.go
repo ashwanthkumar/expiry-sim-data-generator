@@ -269,7 +269,7 @@ func readData(records []map[string]string, columnarData map[int64]map[string]Tic
 	tickerNames := make(map[string]struct{})
 	for _, r := range records {
 		rawTicker := r["Ticker"]
-		if isNiftyTicker(rawTicker) {
+		if isNiftyOptionsTicker(rawTicker) {
 			ticker := cleanTicker(rawTicker)
 			tickerNames[ticker] = struct{}{}
 			tickTime, err := parseTime(r["Date/Time"])
@@ -315,8 +315,8 @@ func SliceContains(slice []int64, elem int64) bool {
 	return false
 }
 
-func isNiftyTicker(ticker string) bool {
-	isNiftyTicker := (ticker == "NIFTY" || ticker == "NIFTY-FUT" || ticker == "INDIAVIX" || strings.HasPrefix(ticker, "NIFTYWK"))
+func isNiftyOptionsTicker(ticker string) bool {
+	isNiftyTicker := (strings.HasPrefix(ticker, "NIFTYWK"))
 	return isNiftyTicker
 }
 
