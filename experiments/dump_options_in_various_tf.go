@@ -101,14 +101,12 @@ func main() {
 			allTimeTicksForTheCurrentExpiry := buildTimeTicksFromColumns(columnarData)
 			// given each file contains all the data to expiry the last time in a sorted slice will be the expiry time that we need
 			expiryDate := truncateToDay(time.Unix(allTimeTicksForTheCurrentExpiry[len(allTimeTicksForTheCurrentExpiry)-1], 0))
+			expiryDateFormat := expiryDate.Format("2006-01-02")
 
 			for _, columnToPick := range columnNames {
-				// columnToPick := "NIFTY15700CE"
+				underlying := underlyingFromTicker(columnToPick)
 				timeUnits := []time.Duration{1 * time.Minute, 3 * time.Minute, 5 * time.Minute}
 				for _, unitTime := range timeUnits {
-					// unitTime := 5 * time.Minute
-					underlying := underlyingFromTicker(columnToPick)
-
 					ohlcDataByUnitTime, ohlcDataTicks := ohlcDataGroupedByFor(allTimeTicksForTheCurrentExpiry, columnarData, columnToPick, unitTime)
 					ticks := [][]float64{}
 					for _, tick := range ohlcDataTicks {
@@ -116,11 +114,16 @@ func main() {
 						ticks = append(ticks, tickData.ToSlice(tick))
 					}
 
-					writeDataToFs(columnToPick, expiryDate, unitTime, ticks, underlying)
+					writeTickDataToFs(columnToPick, expiryDateFormat, unitTime, ticks, underlying)
 				}
 			}
+			writeTickersFromThisExpiry(columnNames, expiryDateFormat)
 		}
 	}
+
+	// now that we've dumped all the files across various timeframes to disk, let's create easy to process index content
+	// inside each expiry folder, we might want to dump all the strikes / symbols in a static file so we can query it from
+	// the UI. Similarly, we also need a expiries.json which has all the required expiry dates in a file.
 
 	// const minStrikeDistance float64 = 50
 	// for _, tick := range allTimeTicksForTheCurrentExpiry {
@@ -131,14 +134,26 @@ func main() {
 	// }
 }
 
-func writeDataToFs(columnToPick string, expiryDate time.Time, unitTime time.Duration, ticks [][]float64, underlying string) {
+func writeTickersFromThisExpiry(columnNames []string, expiryDateFormat string) {
+	underlying := underlyingFromTicker(columnNames[0])
+	file, err := json.Marshal(columnNames)
+	handleError(err)
+	fileName := fmt.Sprintf("%s/%s/symbols.json", underlying, expiryDateFormat)
+	err = os.MkdirAll(filepath.Dir(fileName), os.ModePerm)
+	handleError(err)
+	err = ioutil.WriteFile(fileName, file, 0644)
+	handleError(err)
+	log.Printf("Wrote %s that has all the strikes\n", fileName)
+}
+
+func writeTickDataToFs(columnToPick string, expiryDateFormat string, unitTime time.Duration, ticks [][]float64, underlying string) {
 	output := make(map[string]interface{})
 	output["ticker"] = columnToPick
-	expiryDateFormat := expiryDate.Format("2006-01-02")
 	output["expiryDate"] = expiryDateFormat
 	tfMinutes := unitTime.Minutes()
 	output["tf_minutes"] = tfMinutes
 	output["data"] = ticks
+
 	file, err := json.Marshal(output)
 	handleError(err)
 
