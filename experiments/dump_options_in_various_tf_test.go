@@ -15,9 +15,10 @@ func TestIsOptionOnWeekly(t *testing.T) {
 }
 
 func TestIsOptionOnMonthly(t *testing.T) {
-	assert.True(t, isNiftyOptionsTicker("NIFTY", true))
-	assert.True(t, isNiftyOptionsTicker("NIFTYWK15500PE", true))
-	assert.True(t, isNiftyOptionsTicker("NIFTY-FUT", true))
+	isMonthly := true
+	assert.True(t, isNiftyOptionsTicker("NIFTY", isMonthly))
+	assert.True(t, isNiftyOptionsTicker("NIFTYWK15500PE", isMonthly))
+	assert.True(t, isNiftyOptionsTicker("NIFTY-FUT", isMonthly))
 }
 
 func TestIsNotOptionOnWeekly(t *testing.T) {
@@ -27,7 +28,7 @@ func TestIsNotOptionOnWeekly(t *testing.T) {
 }
 
 func TestIsNotOptionOnMonthly(t *testing.T) {
-	assert.False(t, isNiftyOptionsTicker("NIFTY", false))
-	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT", false))
-	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT", false))
+	isMonthly := true
+	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT", isMonthly))
+	assert.False(t, isNiftyOptionsTicker("FINNIFTY-FUT", isMonthly))
 }

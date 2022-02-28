@@ -415,7 +415,7 @@ func SliceContains(slice []int64, elem int64) bool {
 func isNiftyOptionsTicker(ticker string, isMonthly bool) bool {
 	underlying := underlyingFromTicker(ticker)
 	validTicker := strings.EqualFold(underlying, "NIFTY")
-	if isMonthly {
+	if validTicker && isMonthly {
 		validTicker = validTicker || isFuture(ticker)
 	} else {
 		validTicker = validTicker && isOption(ticker)
