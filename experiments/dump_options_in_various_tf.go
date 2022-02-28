@@ -414,9 +414,13 @@ func SliceContains(slice []int64, elem int64) bool {
 
 func isNiftyOptionsTicker(ticker string, isMonthly bool) bool {
 	underlying := underlyingFromTicker(ticker)
-	includeFutures := isMonthly
-	isNiftyOptionsTicker := (isOption(ticker) || (includeFutures && isFuture(ticker))) && strings.EqualFold(underlying, "NIFTY")
-	return isNiftyOptionsTicker
+	validTicker := strings.EqualFold(underlying, "NIFTY")
+	if isMonthly {
+		validTicker = validTicker || isFuture(ticker)
+	} else {
+		validTicker = validTicker && isOption(ticker)
+	}
+	return validTicker
 }
 
 func parseTime(input string) (time.Time, error) {
