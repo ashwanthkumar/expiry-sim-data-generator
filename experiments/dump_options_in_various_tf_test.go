@@ -10,13 +10,12 @@ func TestSliceContains(t *testing.T) {
 }
 
 func TestIsOption(t *testing.T) {
-	input := "NIFTYWK15500PE"
-	assert.True(t, isNiftyOptionsTicker(input))
+	assert.True(t, isNiftyOptionsTicker("NIFTYWK15500PE"))
+	assert.True(t, isNiftyOptionsTicker("NIFTY-FUT"))
 }
 
 func TestIsNotOption(t *testing.T) {
 	assert.False(t, isNiftyOptionsTicker("NIFTY"))
-	assert.False(t, isNiftyOptionsTicker("NIFTY-FUT"))
 	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT"))
 	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT"))
 }

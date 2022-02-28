@@ -73,6 +73,10 @@ func (t TickData) ToSlice(timerTick int64) []float64 {
 }
 
 func main() {
+	baseOutput := "data/"
+	baseOutputForOptions := path.Join(baseOutput, "options")
+	baseOutputForFut := path.Join(baseOutput, "futures")
+	baseOutputForSpot := path.Join(baseOutput, "spot")
 	baseLocations := []string{"monthly/", "weekly/"}
 	for _, baseLocation := range baseLocations {
 
@@ -95,7 +99,7 @@ func main() {
 			// hence this format of choice.
 			columnarData := make(map[int64]map[string]TickData)
 
-			columnNames := readData(records, columnarData)
+			columnNames := readData(records, columnarData, isNiftyOptionsTicker)
 			// log.Printf("built in-memory collection of nifty records from: %v\n", columnNames)
 
 			allTimeTicksForTheCurrentExpiry := buildTimeTicksFromColumns(columnarData)
@@ -114,10 +118,39 @@ func main() {
 						ticks = append(ticks, tickData.ToSlice(tick))
 					}
 
-					writeTickDataToFs(columnToPick, expiryDateFormat, unitTime, ticks, underlying)
+					baseOutputDir := buildBaseOutputDir(columnToPick, baseOutputForFut, baseOutputForOptions, baseOutputForSpot)
+					writeTickDataToFs(baseOutputDir, columnToPick, expiryDateFormat, unitTime, ticks, underlying)
 				}
 			}
-			writeTickersFromThisExpiry(columnNames, expiryDateFormat)
+			underlyingToColumns := GroupBy(columnNames, underlyingFromTicker)
+
+			for underlying, columnsToWrite := range underlyingToColumns {
+				baseOutputToColumns := GroupBy(columnsToWrite, func(column string) string {
+					return buildBaseOutputDir(column, baseOutputForFut, baseOutputForOptions, baseOutputForSpot)
+				})
+
+				for baseOutputDir, columns := range baseOutputToColumns {
+					writeTickersFromThisExpiry(baseOutputDir, underlying, columns, expiryDateFormat)
+				}
+			}
+		}
+	}
+
+	// index the list of expiries
+	locationsToIndexexpiries := []string{baseOutputForFut, baseOutputForOptions}
+	for _, base := range locationsToIndexexpiries {
+		filesInBase, err := ioutil.ReadDir(base)
+		handleError(err)
+		for _, underlying := range filesInBase {
+			dirWithListOfexpiries := path.Join(base, underlying.Name())
+			expiries, err := ioutil.ReadDir(dirWithListOfexpiries)
+			handleError(err)
+			expiriesToWrite := []string{}
+			for _, e := range expiries {
+				expiriesToWrite = append(expiriesToWrite, e.Name())
+			}
+
+			writeExpiriesForUnderlying(expiriesToWrite, dirWithListOfexpiries)
 		}
 	}
 
@@ -134,11 +167,46 @@ func main() {
 	// }
 }
 
-func writeTickersFromThisExpiry(columnNames []string, expiryDateFormat string) {
-	underlying := underlyingFromTicker(columnNames[0])
+func GroupBy(slice []string, groupFn func(string) string) map[string][]string {
+	groups := make(map[string][]string)
+	for _, elem := range slice {
+		elementKey := groupFn(elem)
+		existing, present := groups[elementKey]
+		if !present {
+			existing = []string{}
+		}
+		existing = append(existing, elem)
+		groups[elementKey] = existing
+	}
+	return groups
+}
+
+func buildBaseOutputDir(ticker, basePathForFut, basePathForOptions, basePathForSpot string) string {
+	if isFuture(ticker) {
+		return basePathForFut
+	} else if isOption(ticker) {
+		return basePathForOptions
+	} else {
+		// if spot
+		return basePathForSpot
+	}
+}
+
+func writeExpiriesForUnderlying(expiriesToWrite []string, dirWithListOfexpiries string) {
+	file, err := json.Marshal(expiriesToWrite)
+	handleError(err)
+	fileName := fmt.Sprintf("%s/expiries.json", dirWithListOfexpiries)
+	err = os.MkdirAll(filepath.Dir(fileName), os.ModePerm)
+	handleError(err)
+	err = ioutil.WriteFile(fileName, file, 0644)
+	handleError(err)
+	log.Printf("Wrote %s that has all the expiries\n", fileName)
+}
+
+func writeTickersFromThisExpiry(baseOutput, underlying string, columnNames []string, expiryDateFormat string) {
 	file, err := json.Marshal(columnNames)
 	handleError(err)
-	fileName := fmt.Sprintf("%s/%s/symbols.json", underlying, expiryDateFormat)
+	fileName := fmt.Sprintf("%s/%s/%s/symbols.json", baseOutput, underlying, expiryDateFormat)
 	err = os.MkdirAll(filepath.Dir(fileName), os.ModePerm)
 	handleError(err)
 	err = ioutil.WriteFile(fileName, file, 0644)
@@ -146,7 +214,7 @@ func writeTickersFromThisExpiry(columnNames []string, expiryDateFormat string) {
 	log.Printf("Wrote %s that has all the strikes\n", fileName)
 }
 
-func writeTickDataToFs(columnToPick string, expiryDateFormat string, unitTime time.Duration, ticks [][]float64, underlying string) {
+func writeTickDataToFs(baseOutput, columnToPick, expiryDateFormat string, unitTime time.Duration, ticks [][]float64, underlying string) {
 	output := make(map[string]interface{})
 	output["ticker"] = columnToPick
 	output["expiryDate"] = expiryDateFormat
@@ -157,7 +225,7 @@ func writeTickDataToFs(columnToPick string, expiryDateFormat string, unitTime ti
 	file, err := json.Marshal(output)
 	handleError(err)
 
-	fileName := fmt.Sprintf("%s/%s/%s/%dmin.json", underlying, expiryDateFormat, columnToPick, int(tfMinutes))
+	fileName := fmt.Sprintf("%s/%s/%s/%s/%dmin.json", baseOutput, underlying, expiryDateFormat, columnToPick, int(tfMinutes))
 	err = os.MkdirAll(filepath.Dir(fileName), os.ModePerm)
 	handleError(err)
 	err = ioutil.WriteFile(fileName, file, 0644)
@@ -291,11 +359,11 @@ func buildTimeTicksFromColumns(columnarData map[int64]map[string]TickData) []int
 	return sliceToSortAndReturn
 }
 
-func readData(records []map[string]string, columnarData map[int64]map[string]TickData) []string {
+func readData(records []map[string]string, columnarData map[int64]map[string]TickData, recordSelector func(string) bool) []string {
 	tickerNames := make(map[string]struct{})
 	for _, r := range records {
 		rawTicker := r["Ticker"]
-		if isNiftyOptionsTicker(rawTicker) {
+		if recordSelector(rawTicker) {
 			ticker := cleanTicker(rawTicker)
 			tickerNames[ticker] = struct{}{}
 			tickTime, err := parseTime(r["Date/Time"])
@@ -343,7 +411,7 @@ func SliceContains(slice []int64, elem int64) bool {
 
 func isNiftyOptionsTicker(ticker string) bool {
 	underlying := underlyingFromTicker(ticker)
-	isNiftyOptionsTicker := isOption(ticker) && strings.EqualFold(underlying, "NIFTY")
+	isNiftyOptionsTicker := (isOption(ticker) || isFuture(ticker)) && strings.EqualFold(underlying, "NIFTY")
 	return isNiftyOptionsTicker
 }
 
