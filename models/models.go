@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/ashwanthkumar/optionskaro/utils"
+	"github.com/ashwanthkumar/expiry-sim-data-generator/utils"
 )
 
 type TickData struct {

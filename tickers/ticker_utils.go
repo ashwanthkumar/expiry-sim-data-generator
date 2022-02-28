@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ashwanthkumar/optionskaro/utils"
+	"github.com/ashwanthkumar/expiry-sim-data-generator/utils"
 )
 
 func UnderlyingFromTicker(ticker string) string {

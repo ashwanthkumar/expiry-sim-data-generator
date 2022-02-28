@@ -1,4 +1,4 @@
-module github.com/ashwanthkumar/optionskaro
+module github.com/ashwanthkumar/expiry-sim-data-generator
 
 go 1.17
 

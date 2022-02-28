@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
-	"github.com/ashwanthkumar/optionskaro/models"
-	"github.com/ashwanthkumar/optionskaro/tickers"
-	"github.com/ashwanthkumar/optionskaro/utils"
+	"github.com/ashwanthkumar/expiry-sim-data-generator/models"
+	"github.com/ashwanthkumar/expiry-sim-data-generator/tickers"
+	"github.com/ashwanthkumar/expiry-sim-data-generator/utils"
 )
 
 func main() {
