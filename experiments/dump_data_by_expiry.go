@@ -30,7 +30,7 @@ func main() {
 	for _, baseLocation := range baseLocations {
 		files, err := ioutil.ReadDir(baseLocation)
 		utils.HandleError(err)
-		for _, f := range files {
+		for _, f := range files[:1] {
 			input := path.Join(baseLocation, f.Name())
 			f, err := os.Open(input)
 			utils.HandleError(err)
@@ -91,21 +91,43 @@ func main() {
 					output["instrument_type"] = ticker.InstrumentType
 					output["strike"] = ticker.Strike
 					output["underlying"] = ticker.Underlying
-					output["expiryDate"] = expiryDateFormat
+					output["expiry_date"] = expiryDateFormat
 					// output["date"] = date
 					output["tf_minutes"] = tfMinutes
 					output["data"] = ticks
 
-					writeOhlcDataToFs(fileName, output)
+					writeDataAsJsonToFile(fileName, output)
 					log.Printf("Wrote %s against %dmin timeframe\n", fileName, tfMinutes)
-				}
-			}
+				} // end for per timeUnit
+			} // end for per column (ticker)
+
+			// we should also find a way to dump all the symbols as part of a given expiry so we can choose to show it in any format we want in the UI
+			fileName := fmt.Sprintf("%s/%s/symbols.json", baseOutput, expiryDateFormat)
+			output := make(map[string]interface{})
+			output["expiry_date"] = expiryDateFormat
+			output["is_monthly_expiry"] = isMonthlyExpiry
+			output["is_weekly_expiry"] = !isMonthlyExpiry
+			output["symbols"] = columnNames
+			writeDataAsJsonToFile(fileName, output)
+		} // end for per file that we read
+
+	} // end for per directory that we read
+
+	// ignorelist of underlying that we don't need
+	ignoreList := []string{"INDIAVIX"}
+	for key, _ := range underlyingToExpiry {
+		if utils.StringContainsIgnoreCase(ignoreList, key) {
+			delete(underlyingToExpiry, key)
 		}
 	}
+
+	// should write the underlying to expiry maping at the root of baseOutput so we can query for it directly
+	fileName := fmt.Sprintf("%s/expiries.json", baseOutput)
+	writeDataAsJsonToFile(fileName, underlyingToExpiry)
 }
 
-func writeOhlcDataToFs(fileName string, outputMap map[string]interface{}) {
-	file, err := json.Marshal(outputMap)
+func writeDataAsJsonToFile(fileName string, outputToWriteAsJson interface{}) {
+	file, err := json.Marshal(outputToWriteAsJson)
 	utils.HandleError(err)
 
 	err = os.MkdirAll(filepath.Dir(fileName), os.ModePerm)
