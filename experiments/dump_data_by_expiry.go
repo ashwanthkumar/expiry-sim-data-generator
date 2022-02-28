@@ -30,7 +30,7 @@ func main() {
 	for _, baseLocation := range baseLocations {
 		files, err := ioutil.ReadDir(baseLocation)
 		utils.HandleError(err)
-		for _, f := range files[:1] {
+		for _, f := range files {
 			input := path.Join(baseLocation, f.Name())
 			f, err := os.Open(input)
 			utils.HandleError(err)
