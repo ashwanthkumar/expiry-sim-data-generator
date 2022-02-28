@@ -99,7 +99,10 @@ func main() {
 			// hence this format of choice.
 			columnarData := make(map[int64]map[string]TickData)
 
-			columnNames := readData(records, columnarData, isNiftyOptionsTicker)
+			columnNames := readData(records, columnarData, func(ticker string) bool {
+				isMonthly := strings.Contains(baseLocation, "monthly/")
+				return isNiftyOptionsTicker(ticker, isMonthly)
+			})
 			// log.Printf("built in-memory collection of nifty records from: %v\n", columnNames)
 
 			allTimeTicksForTheCurrentExpiry := buildTimeTicksFromColumns(columnarData)
@@ -409,9 +412,10 @@ func SliceContains(slice []int64, elem int64) bool {
 	return false
 }
 
-func isNiftyOptionsTicker(ticker string) bool {
+func isNiftyOptionsTicker(ticker string, isMonthly bool) bool {
 	underlying := underlyingFromTicker(ticker)
-	isNiftyOptionsTicker := (isOption(ticker) || isFuture(ticker)) && strings.EqualFold(underlying, "NIFTY")
+	includeFutures := isMonthly
+	isNiftyOptionsTicker := (isOption(ticker) || (includeFutures && isFuture(ticker))) && strings.EqualFold(underlying, "NIFTY")
 	return isNiftyOptionsTicker
 }
 

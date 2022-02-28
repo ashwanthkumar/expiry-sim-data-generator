@@ -9,13 +9,24 @@ func TestSliceContains(t *testing.T) {
 	assert.Equal(t, expected, SliceContains(input, 5))
 }
 
-func TestIsOption(t *testing.T) {
-	assert.True(t, isNiftyOptionsTicker("NIFTYWK15500PE"))
-	assert.True(t, isNiftyOptionsTicker("NIFTY-FUT"))
+func TestIsOptionOnWeekly(t *testing.T) {
+	assert.True(t, isNiftyOptionsTicker("NIFTYWK15500PE", false))
+	assert.False(t, isNiftyOptionsTicker("NIFTY-FUT", false))
 }
 
-func TestIsNotOption(t *testing.T) {
-	assert.False(t, isNiftyOptionsTicker("NIFTY"))
-	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT"))
-	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT"))
+func TestIsOptionOnMonthly(t *testing.T) {
+	assert.True(t, isNiftyOptionsTicker("NIFTYWK15500PE", false))
+	assert.True(t, isNiftyOptionsTicker("NIFTY-FUT", true))
+}
+
+func TestIsNotOptionOnWeekly(t *testing.T) {
+	assert.False(t, isNiftyOptionsTicker("NIFTY", false))
+	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT", false))
+	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT", false))
+}
+
+func TestIsNotOptionOnMonthly(t *testing.T) {
+	assert.False(t, isNiftyOptionsTicker("NIFTY", false))
+	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT", false))
+	assert.False(t, isNiftyOptionsTicker("BANKNIFTY-FUT", false))
 }
