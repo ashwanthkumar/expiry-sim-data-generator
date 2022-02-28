@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ashwanthkumar/optionskaro/experiments/utils"
+	"github.com/ashwanthkumar/optionskaro/utils"
 )
 
 func UnderlyingFromTicker(ticker string) string {
@@ -50,7 +50,7 @@ func ParseTicker(input string) (Ticker, error) {
 	ticker.IsSpot = !ticker.IsFuture && !ticker.IsOption
 
 	if ticker.IsOption {
-		parts, err := parseOptions(CleanTicker(input))
+		parts, err := parseOptions(cleanTicker(input))
 		if err != nil {
 			return Ticker{}, err
 		}
@@ -100,7 +100,7 @@ func parseOptions(input string) ([]string, error) {
 	return matches, nil
 }
 
-func CleanTicker(ticker string) string {
+func cleanTicker(ticker string) string {
 	// 1. remove the WK prefix as part of NIFTY weekly expiry to keep it on par with monthly expiry symbols
 	return strings.ReplaceAll(ticker, "NIFTYWK", "NIFTY")
 }
@@ -119,5 +119,5 @@ func symbolFromOptions(input string) (string, error) {
 	// [1] -> symbol
 	// [2] -> strike
 	// [3] -> CE/PE - Instrument Type
-	return CleanTicker(matches[1]), nil
+	return cleanTicker(matches[1]), nil
 }

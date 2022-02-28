@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/ashwanthkumar/optionskaro/experiments/utils"
+	"github.com/ashwanthkumar/optionskaro/utils"
 )
 
 type TickData struct {

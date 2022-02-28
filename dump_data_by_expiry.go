@@ -16,14 +16,14 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
-	"github.com/ashwanthkumar/optionskaro/experiments/tickers"
-	"github.com/ashwanthkumar/optionskaro/experiments/utils"
 	"github.com/ashwanthkumar/optionskaro/models"
+	"github.com/ashwanthkumar/optionskaro/tickers"
+	"github.com/ashwanthkumar/optionskaro/utils"
 )
 
 func main() {
 	baseOutput := "data"
-	baseLocations := []string{"monthly/", "weekly/"}
+	baseLocations := []string{"experiments/monthly/", "experiments/weekly/"}
 
 	// NIFTY -> {2022-02-26 -> "MONTHLY/WEEKLY", ....} time is stored using time.Unix()
 	underlyingToExpiry := make(map[string]map[int64]string)
